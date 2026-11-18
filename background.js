@@ -6,7 +6,7 @@
 // 排程：每 30 分鐘醒來看一次，週五 00:05 起一直到下週四（整週）、距上次執行超過 2 小時、
 //       而且還有帳號沒處理完才真的跑；Chrome 啟動時有沒處理完的帳號也會補跑。沒有次數上限（v1.1）。
 // 狀態檔：每次狀態改變就把「本週處理完了沒」寫到 下載資料夾\Chrome插件狀態\google_play_weekly.json，
-//       讓開機腳本（蝦皮插件的 開機自動開啟Chrome\open_chrome.ps1）決定要不要開 Chrome。
+//       讓開機腳本（同資料夾的 開機自動開啟Chrome\open_chrome.ps1，選用）決定開機要不要開 Chrome。
 
 const PERKS_URL = 'https://play.google.com/store/points/perks?hl=zh_TW&authuser=';
 const MAX_ACCOUNTS = 20;          // 最多檢查到 authuser=19（超過登入數量時 Google 會一直回最後一個帳號，靠 seen 判斷停止）

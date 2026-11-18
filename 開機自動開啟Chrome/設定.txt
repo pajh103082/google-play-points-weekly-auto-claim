@@ -1,0 +1,20 @@
+﻿# 開機自動開啟 Chrome 的設定（# 開頭的是說明，不會被讀取）
+
+# 要開哪個 Chrome 帳號（裝了「Google Play 每週獎勵自動領取」擴充功能的那個）。
+# 可以填 Gmail、Chrome 右上角顯示的名稱，或資料夾名稱（例如 Default、Profile 1）。
+# 不知道要填什麼：執行「1_列出Chrome帳號並選擇.bat」，輸入編號就會自動寫進來。
+帳號=
+
+# 視窗：normal＝正常開視窗，minimized＝縮小到工作列
+視窗=minimized
+
+# 開機後等幾秒再開 Chrome（等網路連上）
+延遲秒數=30
+
+# 開機時，如果本週的每週獎勵已經處理完，就不開 Chrome（是／否）
+# 想確認現在開機會不會開：執行「5_檢查要不要開Chrome.bat」
+已完成就不開=是
+
+# 以下通常不用填，自動偵測不到才需要
+# Chrome路徑=C:\Program Files\Google\Chrome\Application\chrome.exe
+# Chrome資料夾=C:\Users\你的名字\AppData\Local\Google\Chrome\User Data

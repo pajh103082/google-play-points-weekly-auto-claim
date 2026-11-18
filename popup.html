@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: "Microsoft JhengHei", sans-serif; width: 340px; margin: 12px; font-size: 13px; color: #222; }
+  h1 { font-size: 15px; margin: 0 0 8px; display: flex; align-items: center; gap: 6px; }
+  h1 img { width: 20px; height: 20px; }
+  #week { margin-bottom: 8px; }
+  button { width: 100%; padding: 6px; font-size: 13px; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  td { border-top: 1px solid #ddd; padding: 4px 2px; vertical-align: top; }
+  td.st { white-space: nowrap; text-align: right; }
+  .ok { color: #2e7d32; } .bad { color: #c62828; } .wait { color: #777; }
+  .t { color: #777; font-size: 12px; }
+  h2 { font-size: 13px; margin: 12px 0 4px; }
+  ul { list-style: none; padding: 0; margin: 0; max-height: 150px; overflow-y: auto; }
+  li { border-top: 1px solid #eee; padding: 4px 0; }
+  #settings { margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; }
+  #onlyEmails { width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 12px; height: 44px; }
+  #sponsor { margin-top: 12px; padding-top: 10px; border-top: 1px solid #ddd; text-align: center; }
+  #sponsor button { background: #ff5e5b; color: #fff; border: none; border-radius: 4px; }
+  #sponsor button:hover { background: #e54b48; }
+  #sponsor .note { color: #777; font-size: 12px; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+  <h1><img src="icons/icon32.png" alt="">Google Play 每週獎勵</h1>
+  <div id="week"></div>
+  <button id="run">立即檢查並領取</button>
+  <table id="accounts"></table>
+  <h2>最近紀錄</h2>
+  <ul id="log"></ul>
+  <div id="settings">
+    <div class="t">只處理這些帳號（空白 = Chrome 裡登入的全部帳號；多個用逗號或換行分開）</div>
+    <textarea id="onlyEmails" placeholder="例如 aaa@gmail.com, bbb@gmail.com"></textarea>
+  </div>
+  <div id="sponsor">
+    <div class="note">覺得好用的話，可以請作者喝杯咖啡</div>
+    <button id="sponsorBtn">☕ 在 Ko-fi 贊助作者</button>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

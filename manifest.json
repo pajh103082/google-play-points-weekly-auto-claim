@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Google Play 每週獎勵自動領取",
+  "version": "1.1.0",
+  "description": "每週五自動打開 Google Play Points 網頁的「獎勵」分頁，幫 Chrome 裡登入的每個 Google 帳號領每週獎勵。",
+  "permissions": [
+    "alarms",
+    "tabs",
+    "scripting",
+    "storage",
+    "notifications",
+    "downloads",
+    "downloads.ui"
+  ],
+  "host_permissions": [
+    "https://play.google.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Google Play 每週獎勵",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

@@ -5,6 +5,8 @@
 每週五自動打開 [Google Play Points 網頁](https://play.google.com/store/points/perks)的「獎勵」分頁，幫 Chrome 裡登入的**每一個 Google 帳號**領「每週獎勵」。不用手機、不用模擬器，也不存任何密碼。
 
 > Automatically claims the Google Play Points **weekly prize** for every Google account signed in to Chrome, using the Play Points web page (`play.google.com/store/points/perks?authuser=N`). No phone or emulator needed, no passwords stored.
+>
+> **English version:** [google-play-points-weekly-auto-claim-en](https://github.com/pajh103082/google-play-points-weekly-auto-claim-en)
 
 <p align="center"><img src="icons/icon128.png" width="96" alt="icon"></p>
 

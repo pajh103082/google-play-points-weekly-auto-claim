@@ -9,7 +9,7 @@
 #   open_chrome.ps1 -Check      只顯示狀態和「現在開機會不會開 Chrome」，不開 Chrome
 #   加上 -DryRun                只顯示會執行的指令，不真的開 Chrome（除錯用）
 #
-# 狀態檔：擴充功能（v1.1+）寫在 Chrome 下載資料夾的 Chrome插件狀態\google_play_weekly.json
+# 狀態檔：擴充功能（v1.1+）寫的 google_play_weekly.json，位置看擴充功能資料夾 status_config.json 的 statusDir（相對於 Chrome 下載資料夾）
 #   {"week":"最近一個週五 YYYY-MM-DD","allDone":true/false,...}；week 是本週而且 allDone = 本週處理完
 #
 # 開機（-Startup）時不開 Chrome 的兩種情況：
@@ -238,6 +238,21 @@ function Get-DownloadDir($t) {
   return (Join-Path $env:USERPROFILE 'Downloads')
 }
 
+# 狀態檔在哪個資料夾：看擴充功能資料夾（這個資料夾的上一層）的 status_config.json 的 statusDir，
+# 它是「相對於 Chrome 下載資料夾」的路徑，跟擴充功能寫檔的位置一致；沒有這個檔就用 下載資料夾\Chrome插件狀態
+function Get-StatusDir($t) {
+  $dl = Get-DownloadDir $t
+  $rel = 'Chrome插件狀態'
+  try {
+    $cfgPath = Join-Path (Split-Path -Parent $Here) 'status_config.json'
+    if (Test-Path -LiteralPath $cfgPath) {
+      $v = [string](Get-Child (Read-Json $cfgPath) 'statusDir')
+      if ($v.Trim()) { $rel = $v.Trim() }
+    }
+  } catch {}
+  return (Join-Path $dl ($rel -replace '/', '\'))
+}
+
 # 最近一個週五（含今天）的日期，跟 Google Play 插件的「本週」算法一樣
 function Get-WeekKey {
   $d = (Get-Date).Date
@@ -265,7 +280,7 @@ function Test-ProfileRunning($t) {
 # 回傳 @{ Done = 本週處理完了沒; Lines = 說明文字陣列 }
 function Get-PluginStatus($cfg) {
   $t = Resolve-Target $cfg
-  $dir = Join-Path (Get-DownloadDir $t) 'Chrome插件狀態'
+  $dir = Get-StatusDir $t
   $lines = @("狀態檔資料夾：$dir")
   $wk = Get-WeekKey
   $gp = Join-Path $dir 'google_play_weekly.json'

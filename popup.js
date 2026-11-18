@@ -1,4 +1,5 @@
 const LABEL = {
+  new: '… 本週還沒檢查',
   claimed: '✅ 已領取',
   already: '☑ 本週已領過',
   claimable: '可以領（還沒按）',
@@ -45,7 +46,8 @@ async function render() {
   for (const [email, a] of list) {
     const tr = el('tr');
     const left = el('td');
-    left.append(el('div', '', email), el('div', 't', `${a.time || ''}　${a.info || ''}`));
+    const note = a.neverSince ? `（從 ${a.neverSince} 那週起確認領不到，不用每週重查）` : '';
+    left.append(el('div', '', email), el('div', 't', `${a.time || ''}　${a.info || ''}${note}`));
     const right = el('td', 'st ' + (wait(a.status) ? 'wait' : OK.includes(a.status) ? 'ok' : 'bad'), LABEL[a.status] || a.status);
     tr.append(left, right);
     table.append(tr);

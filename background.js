@@ -5,7 +5,8 @@
 //       找「每週獎勵」卡片裡的「領取」按鈕：disabled＝本週領過；可以按＝按下去，再重新整理確認變成 disabled。
 // 排程：每 30 分鐘醒來看一次，週五 00:05 起一直到下週四（整週）、距上次執行超過 2 小時、
 //       而且還有帳號沒處理完才真的跑；Chrome 啟動時有沒處理完的帳號也會補跑。沒有次數上限（v1.1）。
-// 狀態檔：每次狀態改變就把「本週處理完了沒」寫到 下載資料夾\Chrome插件狀態\google_play_weekly.json，
+// 領不到的帳號（沒有每週獎勵／沒加入 Play Points）：本週不再開它的頁面，換週也直接沿用，每 4 週才自動再確認一次（v1.2）。
+// 狀態檔：每次狀態改變就把「本週處理完了沒」寫到 google_play_weekly.json（位置看 status_config.json，相對於 Chrome 下載資料夾），
 //       讓開機腳本（同資料夾的 開機自動開啟Chrome\open_chrome.ps1，選用）決定開機要不要開 Chrome。
 
 const PERKS_URL = 'https://play.google.com/store/points/perks?hl=zh_TW&authuser=';
@@ -18,6 +19,10 @@ const LOG_LIMIT = 40;
 // not_member = 還沒加入 Play Points（只看到「免費加入」）
 const DONE = ['claimed', 'already', 'app_only', 'no_prize', 'not_member'];
 const OK = ['claimed', 'already', 'no_prize', 'not_member'];   // 徽章與通知不當成問題的狀態
+// 「這個帳號本來就領不到」：不是領取失敗。換週時沿用，不再每週重新打開它的頁面；每 RECHECK_DAYS 天才自動再確認一次
+// （帳號後來加入 Play Points 或有了點數就會被發現）。手動按「立即檢查並領取」會全部重新確認。
+const NEVER = ['no_prize', 'not_member'];
+const RECHECK_DAYS = 28;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fmt = (d = new Date()) =>
@@ -35,7 +40,17 @@ function inWindow(now = new Date()) {
   return !(now.getDay() === 5 && now.getHours() === 0 && now.getMinutes() < 5);
 }
 
-const STATUS_FILE = 'Chrome插件狀態/google_play_weekly.json';
+const STATUS_NAME = 'google_play_weekly.json';
+
+// 狀態檔存哪：擴充功能資料夾的 status_config.json 的 statusDir（相對於 Chrome 下載資料夾，例如 "Chrome插件狀態"）
+async function statusPath() {
+  try {
+    const j = await (await fetch(chrome.runtime.getURL('status_config.json'))).json();
+    const d = String(j.statusDir || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (d && !d.split('/').includes('..') && !/^[a-z]:/i.test(d)) return d + '/' + STATUS_NAME;
+  } catch (_) {}
+  return 'Chrome插件狀態/' + STATUS_NAME;
+}
 
 function setupAlarm() {
   chrome.alarms.create('gp-tick', { delayInMinutes: 1, periodInMinutes: 30 });
@@ -69,9 +84,20 @@ async function loadState() {
   const s = await chrome.storage.local.get(['week', 'accounts', 'log', 'lastRun', 'runningSince', 'onlyEmails']);
   const wk = weekKey();
   if (s.week !== wk) {
+    // 換週：帳號名單全部保留。一般帳號標成「本週還沒檢查」(new)；領不到的帳號直接沿用（不用每週重開頁面），
+    // 超過 RECHECK_DAYS 才改回 new 重新確認一次
+    const carry = {};
+    for (const [e, a] of Object.entries(s.accounts || {})) {
+      const since = a.neverSince || s.week || wk;
+      if (NEVER.includes(a.status) && (new Date(wk) - new Date(since)) / 864e5 < RECHECK_DAYS) {
+        carry[e] = { status: a.status, info: a.info, time: a.time, authuser: a.authuser, tries: 0, neverSince: since };
+      } else {
+        carry[e] = { status: 'new', info: '', time: '', authuser: a.authuser, tries: 0 };
+      }
+    }
     s.week = wk;
-    s.accounts = {};
-    await chrome.storage.local.set({ week: wk, accounts: {} });
+    s.accounts = carry;
+    await chrome.storage.local.set({ week: wk, accounts: carry });
   }
   s.accounts = s.accounts || {};
   s.log = s.log || [];
@@ -125,8 +151,17 @@ async function run(force) {
       tabId = (await chrome.tabs.create({ url: 'about:blank', active: false })).id;
     }
 
+    // 本週已經處理完的帳號（含領不到的）不再打開它的頁面，用上次記下的 authuser 編號跳過
+    const skipAuth = new Map();
+    if (!force) {
+      const s0 = await loadState();
+      for (const [e, a] of Object.entries(s0.accounts)) {
+        if (DONE.includes(a.status) && Number.isInteger(a.authuser)) skipAuth.set(a.authuser, e);
+      }
+    }
     const seen = new Set();
     for (let n = 0; n < MAX_ACCOUNTS; n++) {
+      if (skipAuth.has(n)) { seen.add(skipAuth.get(n)); continue; }
       const r = await inspect(tabId, n, false);
       if (r.status === 'login' || !r.email) {
         if (n === 0) await addLog('—', r.status === 'login' ? 'login' : r.status, r.info || '');
@@ -158,6 +193,8 @@ async function run(force) {
       a.info = final.info || '';
       a.time = fmt();
       a.authuser = n;
+      if (NEVER.includes(a.status)) a.neverSince = a.neverSince || s.week;
+      else delete a.neverSince;
       s.accounts[r.email] = a;
       await chrome.storage.local.set({ accounts: s.accounts });
       await addLog(r.email, final.status, final.info || '');
@@ -216,7 +253,7 @@ async function perksPage(doClaim) {
   const isDisabled = (b) => b.disabled || b.getAttribute('aria-disabled') === 'true' || b.hasAttribute('inert');
 
   if (/accounts\.google\.com/.test(location.href)) return { status: 'login', info: '這個 Chrome 沒有登入 Google' };
-  // 沒加入 Play Points 的帳號，打開 perks 會被轉到 /store/points/enroll
+  // 沒加入 Play Points 的帳號，打開 perks 會被轉到 /store/points/enroll（11/18 實測）
   if (/\/points\/enroll/.test(location.pathname)) {
     await sleep(500);
     return { status: 'not_member', email: emailOf(), info: '這個帳號還沒加入 Play Points' };
@@ -324,7 +361,7 @@ function notifyIfNeeded(results) {
 }
 
 const STATUS_TEXT = {
-  claimed: '已領取', already: '本週已領過', claimable: '可以領', unverified: '按了領取但沒確認到',
+  new: '本週還沒檢查', claimed: '已領取', already: '本週已領過', claimable: '可以領', unverified: '按了領取但沒確認到',
   no_prize: '這個帳號沒有每週獎勵', not_member: '沒加入 Play Points', not_open: '每週獎勵還沒開放',
   app_only: '網頁不能領，要用 App', notfound: '找不到每週獎勵', login: '沒登入 Google', timeout: '載入逾時', error: '錯誤'
 };
@@ -353,11 +390,12 @@ async function writeStatus(force) {
     const list = Object.entries(s.accounts).filter(([e]) => allowed(s, e));
     const pending = list.filter(([, a]) => !DONE.includes(a.status)).map(([e]) => e);
     const obj = { week: s.week, allDone: list.length > 0 && pending.length === 0, accounts: list.length, pending: pending.length };
-    const key = JSON.stringify(obj);
+    const path = await statusPath();
+    const key = path + JSON.stringify(obj);
     const prev = (await chrome.storage.local.get(['statusWritten'])).statusWritten;
     if (!force && prev === key) return;
     obj.updated = fmt();
-    if (await saveJsonFile(STATUS_FILE, obj)) await chrome.storage.local.set({ statusWritten: key });
+    if (await saveJsonFile(path, obj)) await chrome.storage.local.set({ statusWritten: key });
   } catch (e) {
     console.warn('寫狀態檔失敗', e);
   }

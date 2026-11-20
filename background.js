@@ -71,8 +71,8 @@ function hasFutureDate(info) {
   const MON = '(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?';
   let mo = 0, da = 0, m;
   if ((m = info.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/))) { mo = +m[1]; da = +m[2]; }
-  else if ((m = info.match(new RegExp('\\b' + MON + '\\s+(\\d{1,2})\\b', 'i')))) { mo = MONTHS[m[1].slice(0, 3).toLowerCase()]; da = +m[2]; }
-  else if ((m = info.match(new RegExp('\\b(\\d{1,2})\\s+' + MON, 'i')))) { mo = MONTHS[m[2].slice(0, 3).toLowerCase()]; da = +m[1]; }
+  else if ((m = info.match(new RegExp('\\b' + MON + '\\s*(\\d{1,2})(?!\\d)', 'i')))) { mo = MONTHS[m[1].slice(0, 3).toLowerCase()]; da = +m[2]; }
+  else if ((m = info.match(new RegExp('(?<!\\d)(\\d{1,2})\\s+' + MON, 'i')))) { mo = MONTHS[m[2].slice(0, 3).toLowerCase()]; da = +m[1]; }
   if (!mo || !da) return false;
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -82,12 +82,14 @@ function hasFutureDate(info) {
   return rel > today;
 }
 
-// v1.2.1 更新時：本週被判成「已領過」但卡片上沒有未來日期的帳號，可能是 v1.2.0 誤判 → 改回 new 重新檢查
+// 安裝／更新時：本週被判成「已領過」的帳號全部改回 new 重新檢查一次。
+// （v1.2.0 讀不到日期就當已領過；v1.2.1 以前只看第一顆領取按鈕，有兩張卡片時會抓錯。重查一次成本很低，
+//   真的已領過的帳號重查後還是「已領過」。）
 async function recheckDoubtfulAlready() {
   const s = await loadState();
   let changed = 0;
   for (const a of Object.values(s.accounts)) {
-    if (a.status === 'already' && !hasFutureDate(a.info)) { a.status = 'new'; changed++; }
+    if (a.status === 'already') { a.status = 'new'; changed++; }
   }
   if (changed) {
     await chrome.storage.local.set({ accounts: s.accounts, lastRun: 0 });
@@ -271,19 +273,37 @@ async function perksPage(doClaim) {
     }
     return '';
   };
+  // v1.2.3（2026-11-21 實際頁面）：卡片裡的「領取」<button> 兩張都帶 inert＋aria-hidden（只是裝飾），
+  // 差別只有 disabled：可領的是 disabled=false，下一份是 disabled=true。真正能點的是外層整張卡片 <div role="button">。
+  // 所以只看 disabled／aria-disabled，不能把 inert 當成停用（v1.2.2 就是這樣把可領的也當成灰色）。
+  const isDisabled = (b) => !!(b.disabled || b.getAttribute('aria-disabled') === 'true');
+  const clickTarget = (b) => b.closest('[role="button"]') || b;   // 可領的卡片外層是 role=button
+  // 區塊裡所有文字剛好是「領取」的可點元素（button／連結／role=button）；巢狀的只留最裡面那個
+  const claimCtrls = (root) => {
+    const all = [...root.querySelectorAll('button,a,[role="button"]')]
+      .filter((x) => /^(領取|Claim|Collect|立即領取|Claim prize)$/i.test(clean(x.textContent)));
+    return all.filter((x) => !all.some((y) => y !== x && x.contains(y)));
+  };
+  // v1.2.2：每週獎勵區塊裡可能有好幾張卡片（2026-11-20 實際畫面）：
+  //   本週的「每週獎勵等你拿」（到期日：11月27日，領取按鈕可以按）＋ 下一份「推出日期：11月27日」（灰色）。
+  //   v1.2.1 以前只抓第一顆按鈕，抓到灰色那顆 → 誤判已領過。現在每顆按鈕找出自己的卡片，有可以按的就選它。
   const findWeekly = () => {
     const h = [...document.querySelectorAll('h1,h2,h3,h4,div,span')].find(
       (e) => e.childElementCount === 0 && /^(每週獎勵|Weekly prize)/i.test(clean(e.textContent)));
     if (!h) return null;
-    let c = h.parentElement;
-    for (let i = 0; i < 8 && c; i++) {
-      const b = [...c.querySelectorAll('button')].find((x) => /領取|Claim|Collect/i.test(x.textContent));
-      if (b) return { card: c, btn: b };
-      c = c.parentElement;
-    }
-    return { card: null, btn: null };
+    let sec = h.parentElement;
+    for (let i = 0; i < 8 && sec && claimCtrls(sec).length === 0; i++) sec = sec.parentElement;
+    if (!sec || claimCtrls(sec).length === 0) return { card: null, btn: null, cards: [] };
+    // sec = 從「每週獎勵」標題往上，第一個包到領取按鈕的區塊 = 標題＋底下那排卡片。
+    // 不再往外擴大，免得包到別的獎勵（例如遊戲寶物）的領取按鈕。
+    const cards = claimCtrls(sec).map((b) => {
+      let k = b;   // 往上走到「再往上就會包到別顆領取按鈕」為止 = 這顆按鈕自己的卡片
+      while (k.parentElement && k.parentElement !== sec && claimCtrls(k.parentElement).length === 1) k = k.parentElement;
+      return { btn: b, card: k, open: !isDisabled(b) };
+    });
+    const pick = cards.find((x) => x.open) || cards[0];
+    return { card: pick.card, btn: pick.btn, cards };
   };
-  const isDisabled = (b) => b.disabled || b.getAttribute('aria-disabled') === 'true' || b.hasAttribute('inert');
 
   if (/accounts\.google\.com/.test(location.href)) return { status: 'login', info: '這個 Chrome 沒有登入 Google' };
   // 沒加入 Play Points 的帳號，打開 perks 會被轉到 /store/points/enroll（11/18 實測）
@@ -309,7 +329,8 @@ async function perksPage(doClaim) {
     await sleep(500);
   }
   const email = emailOf();
-  const cardText = (x) => clean(x && x.card ? x.card.innerText : '').replace(/^每週獎勵\s*/, '').replace(/lock\s*/g, '').slice(0, 80);
+  const cardText = (x) => clean(x && x.card ? x.card.innerText : '').replace(/^每週獎勵\s*/, '').replace(/\b(lock|hourglass)\s*/g, '').slice(0, 80);
+  const allCards = (x) => (x && x.cards ? x.cards : []).map((c) => (c.open ? '[可領] ' : '[灰] ') + cardText({ card: c.card })).join(' ｜ ').slice(0, 200);
 
   if (!w || !w.btn) {
     if (other === 'not_member') return { status: 'not_member', email, info: '這個帳號還沒加入 Play Points' };
@@ -318,7 +339,9 @@ async function perksPage(doClaim) {
     return { status: 'notfound', email, info: '找不到每週獎勵卡片（可能改版）' };
   }
   const info = cardText(w);
-  if (isDisabled(w.btn)) {
+  if (isDisabled(w.btn)) {   // 走到這裡代表區塊裡每一顆領取按鈕都是灰的
+    const dateText = clean(w.cards.map((c) => cardText({ card: c.card })).join(' '))
+      .replace(/(到期日|到期|Expires?( on)?)[：:\s]*(\d{1,2}\s*月\s*\d{1,2}\s*日|[A-Za-z]{3,9}\.?\s+\d{1,2}|\d{1,2}\s+[A-Za-z]{3,9})/gi, '');
     // 灰色按鈕有兩種：「下一份獎勵還沒開放」和「本週領過了」，畫面一樣，都寫「推出日期：M月D日」。
     // v1.2.1：只有讀到「今天之後」的日期才算本週已領過（在等下一份）。
     // 日期是今天或更早、或讀不到日期（例如更新當天寫「今天」或某個時間）→ 都當成還沒開放，2 小時後再試。
@@ -326,38 +349,64 @@ async function perksPage(doClaim) {
     const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
     const MON = '(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?';
     let mo = 0, da = 0, m;
-    if ((m = info.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/))) { mo = +m[1]; da = +m[2]; }
-    else if ((m = info.match(new RegExp('\\b' + MON + '\\s+(\\d{1,2})\\b', 'i')))) { mo = MONTHS[m[1].slice(0, 3).toLowerCase()]; da = +m[2]; }
-    else if ((m = info.match(new RegExp('\\b(\\d{1,2})\\s+' + MON, 'i')))) { mo = MONTHS[m[2].slice(0, 3).toLowerCase()]; da = +m[1]; }
+    if ((m = dateText.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/))) { mo = +m[1]; da = +m[2]; }
+    else if ((m = dateText.match(new RegExp('\\b' + MON + '\\s*(\\d{1,2})(?!\\d)', 'i')))) { mo = MONTHS[m[1].slice(0, 3).toLowerCase()]; da = +m[2]; }
+    else if ((m = dateText.match(new RegExp('(?<!\\d)(\\d{1,2})\\s+' + MON, 'i')))) { mo = MONTHS[m[2].slice(0, 3).toLowerCase()]; da = +m[1]; }
     if (mo && da) {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       let rel = new Date(now.getFullYear(), mo - 1, da);
       if (rel - today > 180 * 864e5) rel = new Date(now.getFullYear() - 1, mo - 1, da);
       if (rel - today < -180 * 864e5) rel = new Date(now.getFullYear() + 1, mo - 1, da);
-      if (rel > today) return { status: 'already', email, info };
+      if (rel > today) return { status: 'already', email, info: allCards(w) };
     }
-    return { status: 'not_open', email, info: info + (mo ? '' : '（讀不到下一份的日期，當成還沒開放）') };
+    return { status: 'not_open', email, info: allCards(w) + (mo ? '' : '（讀不到下一份的推出日期，當成還沒開放）') };
   }
-  if (!doClaim) return { status: 'claimable', email, info };
+  if (!doClaim) return { status: 'claimable', email, info: allCards(w) };
 
-  w.btn.click();
-  await sleep(4000);
+  // 實際流程（2026-11-21 用使用者帳號驗證過）：
+  //   1. 點整張卡片 → 跳出對話框「按一下即可查看獎勵內容！最多可獲得 100 點 Play 點數」
+  //   2. 點對話框裡那個禮物（文字就是上面那句）→ 對話框變成「+5 你已獲得 5 點 Play 點數！新的獎勵將於 11/27推出。… 完成」
+  //   3. 按「關閉對話方塊」（或「完成」）。重新整理後可領的卡片消失，只剩「推出日期」那張灰卡。
+  const visibleDialog = () => [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"]')]
+    .find((d) => d.getClientRects().length > 0);
+  const waitDialog = async (test, ms) => {
+    for (let t = 0; t < ms; t += 300) {
+      const d = visibleDialog();
+      if (d && (!test || test(clean(d.innerText)))) return d;
+      await sleep(300);
+    }
+    return visibleDialog();
+  };
+  const GOT = /你已獲得|已獲得\s*\d+|You (got|won|earned)|\+\s*\d+\s*(點|Play|points)/i;
+  const REVEAL = /查看獎勵內容|按一下即可|最多可獲得|Tap to|see (your )?(prize|reward)|reveal|Up to \d+/i;
+
+  clickTarget(w.btn).click();
+  let dlg = await waitDialog(null, 8000);
   let result = '';
-  for (let k = 0; k < 3; k++) {
-    const dlg = document.querySelector('[role="dialog"],[role="alertdialog"],[aria-modal="true"]');
-    const txt = clean(dlg ? dlg.innerText : document.body.innerText);
-    if (APP_ONLY.test(txt)) return { status: 'app_only', email, info: '網頁要求改用 Android 的 Play 商店 App 領取' };
-    if (!dlg) break;
-    result = txt.slice(0, 120);
-    // 有得選就選 Play 點數；再按領取／確定類的按鈕
-    const pick = [...dlg.querySelectorAll('button,[role="button"],[role="radio"]')].find((x) => /Play 點數|Play Points/.test(x.textContent));
-    if (pick && k === 0) { pick.click(); await sleep(1500); }
-    const b = [...dlg.querySelectorAll('button')].find((x) => !isDisabled(x) && /領取|Claim|確定|完成|知道了|關閉|OK|Done|Got it/i.test(x.textContent));
-    if (!b) break;
-    b.click();
-    await sleep(3000);
+  if (!dlg) return { status: 'clicked', email, info, result: '點了卡片，但沒有跳出對話框' };
+  let txt = clean(dlg.innerText);
+  if (APP_ONLY.test(txt)) return { status: 'app_only', email, info: '網頁要求改用 Android 的 Play 商店 App 領取' };
+  if (!GOT.test(txt)) {
+    // 第 2 步：點禮物開獎（找文字像「按一下即可查看獎勵內容」的可點元素；找不到就點對話框裡第一個不是關閉鈕的按鈕）
+    const ctrls = [...dlg.querySelectorAll('button,[role="button"]')].filter((x) => !/關閉|Close/i.test(x.getAttribute('aria-label') || ''));
+    const gift = ctrls.find((x) => REVEAL.test(clean(x.textContent))) || ctrls.find((x) => clean(x.textContent));
+    if (gift) {
+      gift.click();
+      dlg = await waitDialog((t) => GOT.test(t) || APP_ONLY.test(t), 10000) || dlg;
+      txt = clean(dlg.innerText);
+      if (APP_ONLY.test(txt)) return { status: 'app_only', email, info: '網頁要求改用 Android 的 Play 商店 App 領取' };
+    }
   }
+  result = txt.replace(/^關閉對話方塊\s*|^Close dialog\s*/i, '').slice(0, 120);
+  // 第 3 步：關掉對話框
+  const closeBtn = dlg.querySelector('[aria-label="關閉對話方塊"],[aria-label="Close dialog"],[aria-label*="關閉"],[aria-label*="Close"]');
+  if (closeBtn) closeBtn.click();
+  else {
+    const done = [...dlg.querySelectorAll('*')].find((x) => /^(完成|Done|OK|確定)$/i.test(clean(x.textContent)) && x.closest('[jsaction*="click"],button,[role="button"]'));
+    if (done) (done.closest('[jsaction*="click"],button,[role="button"]') || done).click();
+  }
+  await sleep(1500);
   return { status: 'clicked', email, info, result };
 }
 
@@ -429,7 +478,7 @@ async function writeStatus(force) {
     const s = await loadState();
     const list = Object.entries(s.accounts).filter(([e]) => allowed(s, e));
     const pending = list.filter(([, a]) => !DONE.includes(a.status)).map(([e]) => e);
-    const mask = (e) => e.replace(/^(.{2}).*?(.{0,2})@.*$/, '$1***$2');   // 只留前 2 後 2 碼，檔案裡不放完整 email
+    const mask = (e) => e.replace(/^(.{2}).*?(.{0,3})@.*$/, '$1***$2');   // 只留前 2 後 3 碼，檔案裡不放完整 email
     const obj = {
       week: s.week, allDone: list.length > 0 && pending.length === 0, accounts: list.length, pending: pending.length,
       detail: list.map(([e, a]) => ({ account: mask(e), status: a.status, info: a.info || '', time: a.time || '' }))

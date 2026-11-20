@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Google Play 每週獎勵自動領取",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "每週五自動打開 Google Play Points 網頁的「獎勵」分頁，幫 Chrome 裡登入的每個 Google 帳號領每週獎勵。",
   "permissions": [
     "alarms",
